@@ -1,276 +1,172 @@
-use std::result;
-
-mod chars;
-mod strings;
-mod json;
-
-#[derive(Debug, PartialEq)]
-pub enum Error {
-    Committed,
-    Recoverable
-}
+use std::{cmp::Ordering, result};
 
 pub enum Expectation {
     Anything,
-    Satisfy,
-    Just(char)
 }
 
-pub struct Context;
-
-pub type Result<T> = result::Result<T, Error>;
-
-pub struct State<'a> {
-    source: &'a str,
-    offset: usize,
-    furthest: usize,
+pub struct Failure {
+    remaining: usize,
     expected: Vec<Expectation>
 }
 
-impl<'a> State<'a> {
-    pub fn new(source: &'a str) -> Self {
-        Self {
-            source,
-            offset: 0,
-            furthest: 0,
-            expected: Vec::new()
+trait Merge {
+    fn merge(self, other: Self) -> Self;
+}
+
+impl Merge for Failure {
+    fn merge(mut self, mut other: Self) -> Self {
+        match self.remaining.cmp(&other.remaining) {
+            Ordering::Equal => {
+                self.expected.append(&mut other.expected);
+                self
+            },
+            Ordering::Greater => other,
+            Ordering::Less => self
         }
-    }
-
-    pub fn offset(&self) -> usize {
-        self.offset
-    }
-
-    pub fn goto(&mut self, offset: usize) {
-        self.offset = offset;
-    }
-
-    pub fn advance(&mut self, n: usize) {
-        self.offset += n;
-    }
-
-    pub fn remainder(&self) -> &str {
-        &self.source[self.offset..]
-    }
-
-    pub fn peek(&self) -> Option<char> {
-        self
-            .remainder()
-            .chars()
-            .next()
-    }
-
-    pub fn next(&mut self) -> Option<char> {
-        let ch = self.peek()?;
-        self.advance(ch.len_utf8());
-        
-        Some(ch)
-    }
-
-    pub fn fail(&mut self, expected: Expectation) -> Error {
-        if self.offset > self.furthest {
-            self.furthest = self.offset;
-            self.expected.clear();
-        }
-
-        if self.offset == self.furthest {
-            self.expected.push(expected);
-        }
-
-        Error::Recoverable
     }
 }
+
+impl Merge for Option<Failure> {
+    fn merge(self, other: Self) -> Self {
+        match (self, other) {
+            (Some(first), Some(second)) => Some(first.merge(second)),
+            (first, None) => first,
+            (None, second) => second
+        }
+    }
+}
+
+pub enum Error {
+    Committed(Failure),
+    Recoverable(Failure)    
+}
+
+pub type Result<'a, T> = result::Result<(T, &'a str, Option<Failure>), Error>;
 
 pub trait Parser: Sized {
     type Output;
 
-    fn parse(&self, state: &mut State<'_>) -> Result<Self::Output>;
+    fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output>;
 
-    fn run(&self, input: &str) -> Result<Self::Output> {
-        self.parse(&mut State::new(input))
+    fn many(self) -> Many<Self> {
+        Many(self)
     }
 
-    fn cut(self) -> impl Parser<Output = Self::Output> {
-        move |state: &mut State<'_>| {
-            match self.parse(state) {
-                Err(Error::Recoverable) => Err(Error::Committed),
-                otherwise => otherwise
-            }
-        }
+    fn many_once(self) -> ManyOnce<Self> {
+        ManyOnce(self)
     }
 
-    fn many(self) -> impl Parser<Output = Vec<Self::Output>> {
-        move |state: &mut State<'_>| {
-            let mut outputs = Vec::new();
-
-            loop {
-                let start = state.offset();
-
-                match self.parse(state) {
-                    Ok(output) => outputs.push(output),
-                    Err(Error::Recoverable) => {
-                        state.goto(start);
-                        break;
-                    },
-                    Err(Error::Committed) => return Err(Error::Committed)
-                }
-            }
-
-            Ok(outputs)
-        }
-    }
-
-    fn many_once(self) -> impl Parser<Output = Vec<Self::Output>> {
-        move |state: &mut State<'_>| {
-            let start = state.offset();
-
-            let mut outputs = match self.parse(state) {
-                Ok(output) => vec![output],
-                Err(Error::Recoverable) => {
-                    state.goto(start);
-                    return Err(Error::Recoverable);
-                }
-                Err(Error::Committed) => return Err(Error::Committed),
-            };
-
-            loop {
-                let start = state.offset();
-
-                match self.parse(state) {
-                    Ok(output) => outputs.push(output),
-                    Err(Error::Recoverable) => {
-                        state.goto(start);
-                        break;
-                    }
-                    Err(Error::Committed) => return Err(Error::Committed)
-                }
-            }
-
-            Ok(outputs)
-        }
-    }
-
-    fn map<F, B>(self, op: F) -> impl Parser<Output = B>
-    where
-        F: Fn(Self::Output) -> B
-    {
-        move |state: &mut State<'_>| {
-            let start = state.offset();
-            match self.parse(state) {
-                Ok(output) => Ok(op(output)),
-                Err(Error::Recoverable) => {
-                    state.goto(start);
-                    Err(Error::Recoverable)
-                }
-                Err(Error::Committed) => Err(Error::Committed)
-            }
-        }
-    }
-
-    fn optional(self) -> impl Parser<Output = Option<Self::Output>> {
-        move |state: &mut State<'_>| {
-            let start = state.offset();
-            match self.parse(state) {
-                Ok(output) => Ok(Some(output)),
-                Err(Error::Recoverable) => {
-                    state.goto(start);
-                    Ok(None)
-                }
-                Err(Error::Committed) => Err(Error::Committed),
-            }
-        }
-    }
-
-    fn or<P>(self, other: P) -> impl Parser<Output = Self::Output>
+    fn or<P>(self, other: P) -> Or<Self, P>
     where
         P: Parser<Output = Self::Output>
     {
-        move |state: &mut State<'_>| {
-            let start = state.offset();
-            
-            match self.parse(state) {
-                Err(Error::Recoverable) => {
-                    state.goto(start);
-                    other.parse(state)
-                }
-                otherwise => otherwise
-            }
-        }
+        Or(self, other)
     }
 
-    fn repeat<const N: usize>(self) -> impl Parser<Output = [Self::Output; N]> {
-        move |state: &mut State<'_>| {
-            let mut outputs = Vec::with_capacity(N);
-
-            for _ in 0..N {
-                outputs.push(self.parse(state)?);
-            }
-
-            Ok(unsafe { outputs.try_into().unwrap_unchecked() })
-        }
-    }
-
-    fn satisfy<F>(self, predicate: F) -> impl Parser<Output = Self::Output>
-    where
-        F: Fn(&Self::Output) -> bool
-    {
-        move |state: &mut State<'_>| {
-            let start = state.offset();
-            let output = self.parse(state)?;
-
-            if predicate(&output) {
-                Ok(output)
-            } else {
-                state.goto(start);
-                Err(state.fail(Expectation::Satisfy))
-            }
-        }
-    }
-
-    fn then<P>(self, next: P) -> impl Parser<Output = (Self::Output, P::Output)>
+    fn then<P>(self, next: P) -> Then<Self, P>
     where
         P: Parser
     {
-        move |state: &mut State<'_>| {
-            let start = state.offset();
-            let first = self.parse(state)?;
+        Then(self, next)
+    }
+}
 
-            match next.parse(state) {
-                Ok(second) => Ok((first, second)),
-                Err(Error::Recoverable) => {
-                    state.goto(start);
-                    Err(Error::Recoverable)
-                }
-                Err(Error::Committed) => Err(Error::Committed)
-            }
+pub struct Many<P>(P);
+
+impl<P> Parser for Many<P>
+where
+    P: Parser
+{
+    type Output = Vec<P::Output>;
+
+    fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
+        let mut outputs = Vec::new();
+        let mut rest = input;
+        let mut latent = None;
+
+        while let Ok((output, next, failure)) = self.0.parse(rest) {
+            outputs.push(output);
+            rest = next;
+            latent = latent.merge(failure);
+        }
+
+        Ok((outputs, rest, latent))
+    }
+}
+
+pub struct ManyOnce<P>(P);
+
+impl<P> Parser for ManyOnce<P>
+where
+    P: Parser
+{
+    type Output = Vec<P::Output>;
+
+    fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
+        let (output, next, failure) = self.0.parse(input)?;
+        let mut outputs = vec![output];
+        let mut rest = next;
+        let mut latent = failure;
+
+        while let Ok((output, next, failure)) = self.0.parse(rest) {
+            outputs.push(output);
+            rest = next;
+            latent = latent.merge(failure);
+        }
+
+        Ok((outputs, rest, latent))
+    }
+}
+
+pub struct Or<A, B>(A, B);
+
+impl<A, B> Parser for Or<A, B>
+where
+    A: Parser,
+    B: Parser<Output = A::Output>
+{
+    type Output = A::Output;
+
+    fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
+        match self.0.parse(input) {
+            Err(Error::Recoverable(first)) => match self.1.parse(input) {
+                Ok((output, rest, latent)) => 
+                    Ok((output, rest, Some(first).merge(latent))),
+
+                Err(Error::Recoverable(second)) => Err(Error::Recoverable(first.merge(second))),
+
+                otherwise => otherwise
+            },
+
+            otherwise => otherwise
         }
     }
-    
-    fn value<T>(self, what: T) -> impl Parser<Output = T> 
-    where
-        T: Clone
-    {
-        move |state: &mut State<'_>| {
-            let start = state.offset();
-            match self.parse(state) {
-                Ok(_) => Ok(what.clone()),
-                Err(Error::Recoverable) => {
-                    state.goto(start);
-                    Err(Error::Recoverable)
-                }
-                Err(Error::Committed) => Err(Error::Committed)
-            }
-        }
+}
+
+pub struct Then<A, B>(A, B);
+
+impl<A, B> Parser for Then<A, B>
+where
+    A: Parser,
+    B: Parser
+{
+    type Output = (A::Output, B::Output);
+
+    fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
+        let (first, rest, failure0) = self.0.parse(input)?;
+        let (second, rest, failure1) = self.1.parse(rest)?;
+
+        Ok(((first, second), rest, failure0.merge(failure1)))
     }
 }
 
 impl<T, O> Parser for T
 where
-    T: Fn(&mut State) -> Result<O>
+    T: for<'a> Fn(&'a str) -> Result<'a, O>
 {
     type Output = O;
 
-    fn parse(&self, state: &mut State<'_>) -> Result<Self::Output> {
-        self(state)
+    fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
+        self(input)
     }
 }
