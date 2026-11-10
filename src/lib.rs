@@ -1,12 +1,21 @@
 use std::{cmp::Ordering, result};
 
 pub enum Expectation {
-    Anything,
+    Satisfy,
 }
 
 pub struct Failure {
     remaining: usize,
     expected: Vec<Expectation>
+}
+
+impl Failure {
+    pub fn from_source(source: &str, expected: Expectation) -> Self {
+        Self {
+            remaining: source.len(),
+            expected: vec![expected]
+        }
+    }
 }
 
 trait Merge {
@@ -48,12 +57,27 @@ pub trait Parser: Sized {
 
     fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output>;
 
+    fn cut(self) -> Cut<Self> {
+        Cut(self)
+    }
+
     fn many(self) -> Many<Self> {
         Many(self)
     }
 
     fn many_once(self) -> ManyOnce<Self> {
         ManyOnce(self)
+    }
+    
+    fn map<F, O>(self, op: F) -> Map<Self, F>
+    where
+        F: Fn(Self::Output) -> O
+    {
+        Map(self, op)
+    }
+
+    fn optional(self) -> Optional<Self> {
+        Optional(self)
     }
 
     fn or<P>(self, other: P) -> Or<Self, P>
@@ -63,11 +87,34 @@ pub trait Parser: Sized {
         Or(self, other)
     }
 
+    fn satisfy<F>(self, predicate: F) -> Satisfy<Self, F>
+    where
+        F: Fn(&Self::Output) -> bool
+    {
+        Satisfy(self, predicate)
+    }
+
     fn then<P>(self, next: P) -> Then<Self, P>
     where
         P: Parser
     {
         Then(self, next)
+    }
+}
+
+pub struct Cut<P>(P);
+
+impl<P> Parser for Cut<P>
+where
+    P: Parser
+{
+    type Output = P::Output;
+
+    fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
+        match self.0.parse(input) {
+            Err(Error::Recoverable(failure)) => Err(Error::Committed(failure)),
+            otherwise => otherwise
+        }
     }
 }
 
@@ -118,6 +165,39 @@ where
     }
 }
 
+pub struct Map<P, F>(P, F);
+
+impl<P, F, O> Parser for Map<P, F>
+where
+    P: Parser,
+    F: Fn(P::Output) -> O
+{
+    type Output = O;
+
+    fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
+        let (output, rest, failure) = self.0.parse(input)?;
+
+        Ok((self.1(output), rest, failure))
+    }
+}
+
+pub struct Optional<P>(P);
+
+impl<P> Parser for Optional<P>
+where
+    P: Parser
+{
+    type Output = Option<P::Output>;
+
+    fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
+        match self.0.parse(input) {
+            Ok((output, rest, failure)) => Ok((Some(output), rest, failure)),
+            Err(Error::Recoverable(failure)) => Ok((None, input, Some(failure))),
+            Err(Error::Committed(failure)) => Err(Error::Committed(failure))
+        }
+    }
+}
+
 pub struct Or<A, B>(A, B);
 
 impl<A, B> Parser for Or<A, B>
@@ -139,6 +219,26 @@ where
             },
 
             otherwise => otherwise
+        }
+    }
+}
+
+pub struct Satisfy<P, F>(P, F);
+
+impl<P, F> Parser for Satisfy<P, F>
+where
+    P: Parser,
+    F: Fn(&P::Output) -> bool
+{
+    type Output = P::Output;
+
+    fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
+        let (output, rest, failure) = self.0.parse(input)?;
+
+        if self.1(&output) {
+            Ok((output, rest, failure))
+        } else {
+            Err(Error::Recoverable(Failure::from_source(input, Expectation::Satisfy)))
         }
     }
 }
