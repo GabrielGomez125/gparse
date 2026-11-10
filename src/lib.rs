@@ -1,7 +1,10 @@
 use std::{cmp::Ordering, result};
 
+mod chars;
+
 pub enum Expectation {
     Satisfy,
+    Label(String)
 }
 
 pub struct Failure {
@@ -15,6 +18,12 @@ impl Failure {
             remaining: source.len(),
             expected: vec![expected]
         }
+    }
+
+    pub fn label(mut self, label: &str) -> Self {
+        self.expected.clear();
+        self.expected.push(Expectation::Label(label.to_string()));
+        self
     }
 }
 
@@ -76,6 +85,10 @@ pub trait Parser: Sized {
         Map(self, op)
     }
 
+    fn label(self, label: &str) -> Label<Self> {
+        Label(self, label.to_string())
+    }
+
     fn optional(self) -> Optional<Self> {
         Optional(self)
     }
@@ -113,6 +126,23 @@ where
     fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
         match self.0.parse(input) {
             Err(Error::Recoverable(failure)) => Err(Error::Committed(failure)),
+            otherwise => otherwise
+        }
+    }
+}
+
+pub struct Label<P>(P, String);
+
+impl<P> Parser for Label<P>
+where
+    P: Parser
+{
+    type Output = P::Output;
+
+    fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
+        match self.0.parse(input) {
+            Err(Error::Recoverable(failure)) => Err(Error::Recoverable(failure.label(&self.1))),
+            Err(Error::Committed(failure)) => Err(Error::Committed(failure.label(&self.1))),
             otherwise => otherwise
         }
     }
