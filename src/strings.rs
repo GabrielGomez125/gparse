@@ -1,4 +1,7 @@
-use crate::{Merge, Parser, chars::char};
+use crate::{
+    Merge, Parser,
+    chars::{anything, char},
+};
 
 pub struct Literal(String);
 
@@ -19,6 +22,10 @@ impl Parser for Literal {
     }
 }
 
-pub fn literal(string: &str) -> Literal {    
+pub fn literal(string: &str) -> Literal {
     Literal(string.to_string())
+}
+
+pub fn whitespace() -> impl Parser<Output = Vec<char>> {
+    anything.satisfy(|&ch| ch.is_whitespace()).many()
 }
