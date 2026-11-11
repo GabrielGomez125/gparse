@@ -1,7 +1,6 @@
 use std::{cmp::Ordering, result};
 
 pub mod chars;
-pub mod json;
 pub mod numbers;
 pub mod strings;
 
@@ -136,14 +135,6 @@ pub trait Parser: Sized {
         IgnoreThen(self, next)
     }
 
-    fn delimited<L, R>(self, left: L, right: R) -> impl Parser<Output = Self::Output>
-    where
-        L: Parser,
-        R: Parser,
-    {
-        left.ignore_then(self).then_ignore(right)
-    }
-
     // Other combinators
 
     fn map<F, O>(self, op: F) -> Map<Self, F>
@@ -160,7 +151,7 @@ pub trait Parser: Sized {
         Satisfy(self, predicate)
     }
 
-    fn value<T>(self, what: T) -> impl Parser<Output = T>
+    fn value<T>(self, what: T) -> Value<Self, T>
     where
         T: Clone,
     {

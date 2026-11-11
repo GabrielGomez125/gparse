@@ -1,54 +1,60 @@
 use crate::{
-    Parser,
     chars::{char, one_of},
+    Parser,
 };
 
-pub fn zero() -> impl Parser<Output = u8> {
-    char('0').value(0)
+pub fn zero<'a>(input: &'a str) -> crate::Result<'a, u8> {
+    char('0').value(0).parse(input)
 }
 
-pub fn nonzero_digit() -> impl Parser<Output = u8> {
-    one_of("123456789").map(|ch| ch.to_digit(10).unwrap() as u8)
+pub fn nonzero_digit<'a>(input: &'a str) -> crate::Result<'a, u8> {
+    one_of("123456789")
+        .map(|ch| ch.to_digit(10).unwrap() as u8)
+        .parse(input)
 }
 
-pub fn digit() -> impl Parser<Output = u8> {
-    zero().or(nonzero_digit())
+pub fn digit<'a>(input: &'a str) -> crate::Result<'a, u8> {
+    zero.or(nonzero_digit).parse(input)
 }
 
-pub fn positive_integer() -> impl Parser<Output = u32> {
-    nonzero_digit().then(digit().many()).map(|(first, rest)| {
-        let mut acc = 0u32;
-        let mut pow = 1u32;
+pub fn positive_integer<'a>(input: &'a str) -> crate::Result<'a, u32> {
+    nonzero_digit
+        .then(digit.many())
+        .map(|(first, rest)| {
+            let mut acc = 0u32;
+            let mut pow = 1u32;
 
-        for digit in rest.into_iter().rev() {
-            acc += digit as u32 * pow;
-            pow *= 10;
-        }
+            for digit in rest.into_iter().rev() {
+                acc += digit as u32 * pow;
+                pow *= 10;
+            }
 
-        acc += first as u32 * pow;
-        acc
-    })
+            acc += first as u32 * pow;
+            acc
+        })
+        .parse(input)
 }
 
-pub fn nonnegative_integer() -> impl Parser<Output = u32> {
-    zero().map(u32::from).or(positive_integer())
+pub fn nonnegative_integer<'a>(input: &'a str) -> crate::Result<'a, u32> {
+    zero.map(u32::from).or(positive_integer).parse(input)
 }
 
-pub fn integer() -> impl Parser<Output = i32> {
+pub fn integer<'a>(input: &'a str) -> crate::Result<'a, i32> {
     char('-')
         .optional()
-        .then(nonnegative_integer())
+        .then(nonnegative_integer)
         .map(|(sign, int)| match sign {
             Some(_) => -(int as i32),
             None => int as i32,
         })
+        .parse(input)
 }
 
-pub fn number() -> impl Parser<Output = f64> {
+pub fn number<'a>(input: &'a str) -> crate::Result<'a, f64> {
     char('-')
         .optional()
-        .then(nonnegative_integer())
-        .then(char('.').ignore_then(digit().many_once()).optional())
+        .then(nonnegative_integer)
+        .then(char('.').ignore_then(digit.many_once()).optional())
         .map(|((sign, int_part), decimal_part)| {
             let mut acc = int_part as f64;
             let mut pow = 0.1;
@@ -67,13 +73,14 @@ pub fn number() -> impl Parser<Output = f64> {
                 None => acc,
             }
         })
+        .parse(input)
 }
 
-pub fn number_scientific() -> impl Parser<Output = f64> {
-    number()
+pub fn number_scientific<'a>(input: &'a str) -> crate::Result<'a, f64> {
+    number
         .then(
             one_of("Ee")
-                .ignore_then(one_of("-+").optional().then(positive_integer()))
+                .ignore_then(one_of("-+").optional().then(positive_integer))
                 .optional(),
         )
         .map(|(number_part, exp_part)| {
@@ -84,4 +91,5 @@ pub fn number_scientific() -> impl Parser<Output = f64> {
 
             number_part * 10f64.powi(exp)
         })
+        .parse(input)
 }
