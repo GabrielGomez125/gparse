@@ -4,11 +4,12 @@ pub mod chars;
 pub mod numbers;
 pub mod strings;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expectation {
     Anything,
     Satisfy,
     Char(char),
+    Label(String),
     Literal(String),
 }
 
@@ -133,6 +134,14 @@ pub trait Parser: Sized {
         P: Parser,
     {
         IgnoreThen(self, next)
+    }
+
+    fn delimited<L, R>(self, left: L, right: R) -> Delimited<Self, L, R>
+    where
+        L: Parser,
+        R: Parser,
+    {
+        Delimited(self, left, right)
     }
 
     // Other combinators
@@ -337,6 +346,25 @@ where
         let (output, rest, failure1) = self.1.parse(rest)?;
 
         Ok((output, rest, failure0.merge(failure1)))
+    }
+}
+
+pub struct Delimited<P, L, R>(P, L, R);
+
+impl<P, L, R> Parser for Delimited<P, L, R>
+where
+    P: Parser,
+    L: Parser,
+    R: Parser,
+{
+    type Output = P::Output;
+
+    fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
+        let (_, rest, failure0) = self.1.parse(input)?;
+        let (output, rest, failure1) = self.0.parse(rest)?;
+        let (_, rest, failure2) = self.2.parse(rest)?;
+
+        Ok((output, rest, failure0.merge(failure1).merge(failure2)))
     }
 }
 
