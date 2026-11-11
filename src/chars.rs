@@ -1,25 +1,60 @@
 use crate::{Expectation, Failure, Parser};
 
 pub fn anything<'a>(input: &'a str) -> crate::Result<'a, char> {
-    let (first, rest) = input
-        .split_at_checked(1)
+    let ch = input
+        .chars()
+        .next()
         .ok_or(Failure::from_source(input, Expectation::Anything))?;
-
-    let ch = first.chars().next().unwrap();
+    let rest = &input[ch.len_utf8()..];
 
     Ok((ch, rest, None))
 }
 
-pub fn char(ch: char) -> impl Parser<Output = char> {
-    anything
-        .satisfy(move |&output| ch == output)
-        .expect(Expectation::Char(ch))
+pub struct Char(char);
+
+impl Parser for Char {
+    type Output = char;
+
+    fn parse<'a>(&self, input: &'a str) -> crate::Result<'a, Self::Output> {
+        anything
+            .satisfy(move |&output| self.0 == output)
+            .expect(Expectation::Char(self.0))
+            .parse(input)
+    }
 }
 
-pub fn one_of(what: &str) -> impl Parser<Output = char> {
-    anything.satisfy(move |&output| what.chars().any(|ch| ch == output))
+pub fn char(ch: char) -> Char {
+    Char(ch)
 }
 
-pub fn none_of(what: &str) -> impl Parser<Output = char> {
-    anything.satisfy(move |&output| what.chars().all(|ch| ch != output))
+pub struct OneOf<'a>(&'a str);
+
+impl Parser for OneOf<'_> {
+    type Output = char;
+
+    fn parse<'a>(&self, input: &'a str) -> crate::Result<'a, Self::Output> {
+        anything
+            .satisfy(move |&output| self.0.chars().any(|ch| ch == output))
+            .parse(input)
+    }
+}
+
+pub fn one_of<'a>(what: &'a str) -> OneOf<'a> {
+    OneOf(what)
+}
+
+pub struct NoneOf<'a>(&'a str);
+
+impl Parser for NoneOf<'_> {
+    type Output = char;
+
+    fn parse<'a>(&self, input: &'a str) -> crate::Result<'a, Self::Output> {
+        anything
+            .satisfy(move |&output| self.0.chars().all(|ch| ch != output))
+            .parse(input)
+    }
+}
+
+pub fn none_of<'a>(what: &'a str) -> NoneOf<'a> {
+    NoneOf(what)
 }
