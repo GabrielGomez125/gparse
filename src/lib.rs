@@ -1,12 +1,19 @@
 use std::{cmp::Ordering, result};
 
 mod chars;
+mod numbers;
+mod strings;
+// mod json;
 
+#[derive(Clone, Debug)]
 pub enum Expectation {
+    Anything,
     Satisfy,
-    Label(String)
+    Char(char),
+    Literal(String)
 }
 
+#[derive(Debug)]
 pub struct Failure {
     remaining: usize,
     expected: Vec<Expectation>
@@ -20,9 +27,9 @@ impl Failure {
         }
     }
 
-    pub fn label(mut self, label: &str) -> Self {
+    pub fn expect(mut self, expected: Expectation) -> Self {
         self.expected.clear();
-        self.expected.push(Expectation::Label(label.to_string()));
+        self.expected.push(expected);
         self
     }
 }
@@ -54,9 +61,16 @@ impl Merge for Option<Failure> {
     }
 }
 
+#[derive(Debug)]
 pub enum Error {
-    Committed(Failure),
-    Recoverable(Failure)    
+    Recoverable(Failure),    
+    Committed(Failure)
+}
+
+impl From<Failure> for Error {
+    fn from(failure: Failure) -> Self {
+        Self::Recoverable(failure)
+    }
 }
 
 pub type Result<'a, T> = result::Result<(T, &'a str, Option<Failure>), Error>;
@@ -68,6 +82,27 @@ pub trait Parser: Sized {
 
     fn cut(self) -> Cut<Self> {
         Cut(self)
+    }
+
+    fn discard_to<P>(self, to: P) -> impl Parser<Output = P::Output>
+    where
+        P: Parser
+    {
+        self
+            .then(to)
+            .map(|(_, output)| output)
+    }
+
+    fn discard_from<P>(self, from: P) -> impl Parser<Output = Self::Output>
+    where
+        P: Parser
+    {
+        from
+            .discard_to(self)
+    }
+
+    fn expect(self, expected: Expectation) -> Expect<Self> {
+        Expect(self, expected)
     }
 
     fn many(self) -> Many<Self> {
@@ -83,10 +118,6 @@ pub trait Parser: Sized {
         F: Fn(Self::Output) -> O
     {
         Map(self, op)
-    }
-
-    fn label(self, label: &str) -> Label<Self> {
-        Label(self, label.to_string())
     }
 
     fn optional(self) -> Optional<Self> {
@@ -113,6 +144,24 @@ pub trait Parser: Sized {
     {
         Then(self, next)
     }
+
+    fn value<T>(self, what: T) -> impl Parser<Output = T> 
+    where
+        T: Clone
+    {
+        Value(self, what)
+    }
+}
+
+impl<F, O> Parser for F
+where
+    F: for<'a> Fn(&'a str) -> Result<'a, O>
+{
+    type Output = O;
+
+    fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
+        self(input)
+    }
 }
 
 pub struct Cut<P>(P);
@@ -131,9 +180,9 @@ where
     }
 }
 
-pub struct Label<P>(P, String);
+pub struct Expect<P>(P, Expectation);
 
-impl<P> Parser for Label<P>
+impl<P> Parser for Expect<P>
 where
     P: Parser
 {
@@ -141,8 +190,8 @@ where
 
     fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
         match self.0.parse(input) {
-            Err(Error::Recoverable(failure)) => Err(Error::Recoverable(failure.label(&self.1))),
-            Err(Error::Committed(failure)) => Err(Error::Committed(failure.label(&self.1))),
+            Err(Error::Recoverable(failure)) => Err(Error::Recoverable(failure.expect(self.1.clone()))),
+            Err(Error::Committed(failure)) => Err(Error::Committed(failure.expect(self.1.clone()))),
             otherwise => otherwise
         }
     }
@@ -223,7 +272,7 @@ where
         match self.0.parse(input) {
             Ok((output, rest, failure)) => Ok((Some(output), rest, failure)),
             Err(Error::Recoverable(failure)) => Ok((None, input, Some(failure))),
-            Err(Error::Committed(failure)) => Err(Error::Committed(failure))
+            Err(failure) => Err(failure)
         }
     }
 }
@@ -242,12 +291,9 @@ where
             Err(Error::Recoverable(first)) => match self.1.parse(input) {
                 Ok((output, rest, latent)) => 
                     Ok((output, rest, Some(first).merge(latent))),
-
                 Err(Error::Recoverable(second)) => Err(Error::Recoverable(first.merge(second))),
-
                 otherwise => otherwise
             },
-
             otherwise => otherwise
         }
     }
@@ -268,7 +314,7 @@ where
         if self.1(&output) {
             Ok((output, rest, failure))
         } else {
-            Err(Error::Recoverable(Failure::from_source(input, Expectation::Satisfy)))
+            Err(Failure::from_source(input, Expectation::Satisfy).into())
         }
     }
 }
@@ -290,13 +336,19 @@ where
     }
 }
 
-impl<T, O> Parser for T
+pub struct Value<P, T>(P, T);
+
+impl<P, T> Parser for Value<P, T>
 where
-    T: for<'a> Fn(&'a str) -> Result<'a, O>
+    P: Parser,
+    T: Clone
 {
-    type Output = O;
+    type Output = T;
 
     fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
-        self(input)
+        match self.0.parse(input) {
+            Ok((_, rest, failure)) => Ok((self.1.clone(), rest, failure)),
+            Err(failure) => Err(failure)
+        }
     }
 }
