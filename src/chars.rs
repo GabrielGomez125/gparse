@@ -4,7 +4,7 @@ pub fn anything<'a>(input: &'a str) -> crate::Result<'a, char> {
     let ch = input
         .chars()
         .next()
-        .ok_or(Failure::from_source(input, Expectation::Anything))?;
+        .ok_or(Failure::new(input, Expectation::Anything).recover())?;
     let rest = &input[ch.len_utf8()..];
 
     Ok((ch, rest, None))
@@ -35,6 +35,7 @@ impl Parser for OneOf<'_> {
     fn parse<'a>(&self, input: &'a str) -> crate::Result<'a, Self::Output> {
         anything
             .satisfy(move |&output| self.0.chars().any(|ch| ch == output))
+            .expect(Expectation::OneOf(self.0.to_string()))
             .parse(input)
     }
 }
@@ -51,6 +52,7 @@ impl Parser for NoneOf<'_> {
     fn parse<'a>(&self, input: &'a str) -> crate::Result<'a, Self::Output> {
         anything
             .satisfy(move |&output| self.0.chars().all(|ch| ch != output))
+            .expect(Expectation::NoneOf(self.0.to_string()))
             .parse(input)
     }
 }

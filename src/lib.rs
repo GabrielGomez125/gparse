@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, result};
+use std::{cmp::Ordering, error, fmt, result};
 
 pub mod chars;
 pub mod numbers;
@@ -9,8 +9,22 @@ pub enum Expectation {
     Anything,
     Satisfy,
     Char(char),
+    OneOf(String),
+    NoneOf(String),
     Label(String),
-    Literal(String),
+}
+
+impl fmt::Display for Expectation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Anything => write!(f, "anything"),
+            Self::Satisfy => write!(f, "something satisfying some predicate"),
+            Self::Char(ch) => write!(f, "\'{}\'", ch),
+            Self::OneOf(what) => write!(f, "one of {}", what),
+            Self::NoneOf(what) => write!(f, "none of {}", what),
+            Self::Label(what) => write!(f, "{}", what),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -20,7 +34,7 @@ pub struct Failure {
 }
 
 impl Failure {
-    pub fn from_source(source: &str, expected: Expectation) -> Self {
+    pub fn new(source: &str, expected: Expectation) -> Self {
         Self {
             remaining: source.len(),
             expected: vec![expected],
@@ -31,6 +45,38 @@ impl Failure {
         self.expected.clear();
         self.expected.push(expected);
         self
+    }
+
+    pub fn recover(self) -> Error {
+        Error::Recoverable(self)
+    }
+
+    pub fn commit(self) -> Error {
+        Error::Committed(self)
+    }
+}
+
+impl fmt::Display for Failure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.expected[..] {
+            [expectation] => write!(f, "Expected {}", expectation),
+            [expectation0, expectation1] => {
+                write!(f, "Expected {} or {}", expectation0, expectation1)
+            }
+            expectations => {
+                write!(f, "Expected ")?;
+
+                for (i, expectation) in expectations.iter().enumerate() {
+                    if i < expectations.len() - 1 {
+                        write!(f, "{} or ", expectation)?;
+                    } else {
+                        write!(f, "{}", expectation)?;
+                    }
+                }
+
+                Ok(())
+            }
+        }
     }
 }
 
@@ -54,9 +100,9 @@ impl Merge for Failure {
 impl Merge for Option<Failure> {
     fn merge(self, other: Self) -> Self {
         match (self, other) {
-            (Some(first), Some(second)) => Some(first.merge(second)),
-            (first, None) => first,
-            (None, second) => second,
+            (Some(failure0), Some(failure1)) => Some(failure0.merge(failure1)),
+            (failure0, None) => failure0,
+            (None, failure1) => failure1,
         }
     }
 }
@@ -67,11 +113,16 @@ pub enum Error {
     Committed(Failure),
 }
 
-impl From<Failure> for Error {
-    fn from(failure: Failure) -> Self {
-        Self::Recoverable(failure)
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::Recoverable(failure) => failure.fmt(f),
+            Error::Committed(failure) => failure.fmt(f),
+        }
     }
 }
+
+impl error::Error for Error {}
 
 pub type Result<'a, T> = result::Result<(T, &'a str, Option<Failure>), Error>;
 
@@ -88,6 +139,10 @@ pub trait Parser: Sized {
 
     fn expect(self, expected: Expectation) -> Expect<Self> {
         Expect(self, expected)
+    }
+
+    fn label(self, label: &str) -> Expect<Self> {
+        Expect(self, Expectation::Label(label.to_string()))
     }
 
     //---------- Repetition combinators ----------
@@ -209,10 +264,8 @@ where
 
     fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
         match self.0.parse(input) {
-            Err(Error::Recoverable(failure)) => {
-                Err(Error::Recoverable(failure.expect(self.1.clone())))
-            }
-            Err(Error::Committed(failure)) => Err(Error::Committed(failure.expect(self.1.clone()))),
+            Err(Error::Recoverable(failure)) => Err(failure.expect(self.1.clone()).recover()),
+            Err(Error::Committed(failure)) => Err(failure.expect(self.1.clone()).commit()),
             otherwise => otherwise,
         }
     }
@@ -233,10 +286,10 @@ where
         let mut rest = input;
         let mut latent = None;
 
-        while let Ok((output, next, failure)) = self.0.parse(rest) {
+        while let Ok((output, next, residual)) = self.0.parse(rest) {
             outputs.push(output);
             rest = next;
-            latent = latent.merge(failure);
+            latent = latent.merge(residual);
         }
 
         Ok((outputs, rest, latent))
@@ -257,10 +310,10 @@ where
         let mut rest = next;
         let mut latent = failure;
 
-        while let Ok((output, next, failure)) = self.0.parse(rest) {
+        while let Ok((output, next, residual)) = self.0.parse(rest) {
             outputs.push(output);
             rest = next;
-            latent = latent.merge(failure);
+            latent = latent.merge(residual);
         }
 
         Ok((outputs, rest, latent))
@@ -281,10 +334,10 @@ where
         let mut latent = None;
 
         for _ in 0..self.1 {
-            let (output, next, failure) = self.0.parse(input)?;
+            let (output, next, residual) = self.0.parse(input)?;
             outputs.push(output);
             rest = next;
-            latent = latent.merge(failure);
+            latent = latent.merge(residual);
         }
 
         Ok((outputs, rest, latent))
@@ -304,9 +357,11 @@ where
 
     fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
         match self.0.parse(input) {
-            Err(Error::Recoverable(first)) => match self.1.parse(input) {
-                Ok((output, rest, latent)) => Ok((output, rest, Some(first).merge(latent))),
-                Err(Error::Recoverable(second)) => Err(Error::Recoverable(first.merge(second))),
+            Err(Error::Recoverable(failure0)) => match self.1.parse(input) {
+                Ok((output, rest, residual)) => Ok((output, rest, Some(failure0).merge(residual))),
+                Err(Error::Recoverable(failure1)) => {
+                    Err(Error::Recoverable(failure0.merge(failure1)))
+                }
                 otherwise => otherwise,
             },
             otherwise => otherwise,
@@ -324,10 +379,10 @@ where
     type Output = (A::Output, B::Output);
 
     fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
-        let (first, rest, failure0) = self.0.parse(input)?;
-        let (second, rest, failure1) = self.1.parse(rest)?;
+        let (output0, rest, failure0) = self.0.parse(input)?;
+        let (output1, rest, failure1) = self.1.parse(rest)?;
 
-        Ok(((first, second), rest, failure0.merge(failure1)))
+        Ok(((output0, output1), rest, failure0.merge(failure1)))
     }
 }
 
@@ -414,7 +469,7 @@ where
         match self.0.parse(input) {
             Ok((output, rest, failure)) => Ok((Some(output), rest, failure)),
             Err(Error::Recoverable(failure)) => Ok((None, input, Some(failure))),
-            Err(failure) => Err(failure),
+            Err(error) => Err(error),
         }
     }
 }
@@ -434,7 +489,7 @@ where
         if self.1(&output) {
             Ok((output, rest, failure))
         } else {
-            Err(Failure::from_source(input, Expectation::Satisfy).into())
+            Err(Failure::new(input, Expectation::Satisfy).recover())
         }
     }
 }
@@ -451,7 +506,7 @@ where
     fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
         match self.0.parse(input) {
             Ok((_, rest, failure)) => Ok((self.1.clone(), rest, failure)),
-            Err(failure) => Err(failure),
+            Err(error) => Err(error),
         }
     }
 }
