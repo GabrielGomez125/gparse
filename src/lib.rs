@@ -359,7 +359,9 @@ where
         match self.0.parse(input) {
             Err(Error::Recoverable(failure0)) => match self.1.parse(input) {
                 Ok((output, rest, residual)) => Ok((output, rest, Some(failure0).merge(residual))),
-                Err(Error::Recoverable(failure1)) => Err(Error::Recoverable(failure0.merge(failure1))),
+                Err(Error::Recoverable(failure1)) => {
+                    Err(Error::Recoverable(failure0.merge(failure1)))
+                }
                 otherwise => otherwise,
             },
             otherwise => otherwise,
