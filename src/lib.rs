@@ -80,7 +80,7 @@ pub trait Parser: Sized {
 
     fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output>;
 
-    // Error combinators
+    //---------- Error combinators ----------
 
     fn cut(self) -> Cut<Self> {
         Cut(self)
@@ -90,7 +90,7 @@ pub trait Parser: Sized {
         Expect(self, expected)
     }
 
-    // Repetition combinators
+    //---------- Repetition combinators ----------
 
     fn many(self) -> Many<Self> {
         Many(self)
@@ -100,11 +100,11 @@ pub trait Parser: Sized {
         ManyOnce(self)
     }
 
-    // Branch combinators
-
-    fn optional(self) -> Optional<Self> {
-        Optional(self)
+    fn repeat(self, n: usize) -> Repeat<Self> {
+        Repeat(self, n)
     }
+
+    //---------- Sequence combinators ----------
 
     fn or<P>(self, other: P) -> Or<Self, P>
     where
@@ -112,8 +112,6 @@ pub trait Parser: Sized {
     {
         Or(self, other)
     }
-
-    // Sequence combinators
 
     fn then<P>(self, next: P) -> Then<Self, P>
     where
@@ -144,13 +142,17 @@ pub trait Parser: Sized {
         Delimited(self, left, right)
     }
 
-    // Other combinators
+    //---------- Other combinators ----------
 
     fn map<F, O>(self, op: F) -> Map<Self, F>
     where
         F: Fn(Self::Output) -> O,
     {
         Map(self, op)
+    }
+
+    fn optional(self) -> Optional<Self> {
+        Optional(self)
     }
 
     fn satisfy<F>(self, predicate: F) -> Satisfy<Self, F>
@@ -178,6 +180,8 @@ where
         self(input)
     }
 }
+
+//---------- Error combinators ----------
 
 pub struct Cut<P>(P);
 
@@ -213,6 +217,8 @@ where
         }
     }
 }
+
+//---------- Repetition combinators ----------
 
 pub struct Many<P>(P);
 
@@ -260,22 +266,32 @@ where
         Ok((outputs, rest, latent))
     }
 }
-pub struct Optional<P>(P);
 
-impl<P> Parser for Optional<P>
+pub struct Repeat<P>(P, usize);
+
+impl<P> Parser for Repeat<P>
 where
     P: Parser,
 {
-    type Output = Option<P::Output>;
+    type Output = Vec<P::Output>;
 
     fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
-        match self.0.parse(input) {
-            Ok((output, rest, failure)) => Ok((Some(output), rest, failure)),
-            Err(Error::Recoverable(failure)) => Ok((None, input, Some(failure))),
-            Err(failure) => Err(failure),
+        let mut outputs = Vec::with_capacity(self.1);
+        let mut rest = input;
+        let mut latent = None;
+
+        for _ in 0..self.1 {
+            let (output, next, failure) = self.0.parse(input)?;
+            outputs.push(output);
+            rest = next;
+            latent = latent.merge(failure);
         }
+
+        Ok((outputs, rest, latent))
     }
 }
+
+//---------- Sequence combinators ----------
 
 pub struct Or<A, B>(A, B);
 
@@ -368,6 +384,8 @@ where
     }
 }
 
+//---------- Other combinators ----------
+
 pub struct Map<P, F>(P, F);
 
 impl<P, F, O> Parser for Map<P, F>
@@ -381,6 +399,23 @@ where
         let (output, rest, failure) = self.0.parse(input)?;
 
         Ok((self.1(output), rest, failure))
+    }
+}
+
+pub struct Optional<P>(P);
+
+impl<P> Parser for Optional<P>
+where
+    P: Parser,
+{
+    type Output = Option<P::Output>;
+
+    fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
+        match self.0.parse(input) {
+            Ok((output, rest, failure)) => Ok((Some(output), rest, failure)),
+            Err(Error::Recoverable(failure)) => Ok((None, input, Some(failure))),
+            Err(failure) => Err(failure),
+        }
     }
 }
 
