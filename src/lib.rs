@@ -101,8 +101,8 @@ impl Merge for Option<Failure> {
     fn merge(self, other: Self) -> Self {
         match (self, other) {
             (Some(failure0), Some(failure1)) => Some(failure0.merge(failure1)),
-            (failure0, None) => failure0,
-            (None, failure1) => failure1,
+            (residual0, None) => residual0,
+            (None, residual1) => residual1,
         }
     }
 }
@@ -305,10 +305,10 @@ where
     type Output = Vec<P::Output>;
 
     fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
-        let (output, next, failure) = self.0.parse(input)?;
+        let (output, next, residual) = self.0.parse(input)?;
         let mut outputs = vec![output];
         let mut rest = next;
-        let mut latent = failure;
+        let mut latent = residual;
 
         while let Ok((output, next, residual)) = self.0.parse(rest) {
             outputs.push(output);
@@ -379,10 +379,10 @@ where
     type Output = (A::Output, B::Output);
 
     fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
-        let (output0, rest, failure0) = self.0.parse(input)?;
-        let (output1, rest, failure1) = self.1.parse(rest)?;
+        let (output0, rest, residual0) = self.0.parse(input)?;
+        let (output1, rest, residual1) = self.1.parse(rest)?;
 
-        Ok(((output0, output1), rest, failure0.merge(failure1)))
+        Ok(((output0, output1), rest, residual0.merge(residual1)))
     }
 }
 
@@ -396,10 +396,10 @@ where
     type Output = A::Output;
 
     fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
-        let (output, rest, failure0) = self.0.parse(input)?;
-        let (_, rest, failure1) = self.1.parse(rest)?;
+        let (output, rest, resiudal0) = self.0.parse(input)?;
+        let (_, rest, residual1) = self.1.parse(rest)?;
 
-        Ok((output, rest, failure0.merge(failure1)))
+        Ok((output, rest, resiudal0.merge(residual1)))
     }
 }
 
@@ -413,10 +413,10 @@ where
     type Output = B::Output;
 
     fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
-        let (_, rest, failure0) = self.0.parse(input)?;
-        let (output, rest, failure1) = self.1.parse(rest)?;
+        let (_, rest, residual0) = self.0.parse(input)?;
+        let (output, rest, residual1) = self.1.parse(rest)?;
 
-        Ok((output, rest, failure0.merge(failure1)))
+        Ok((output, rest, residual0.merge(residual1)))
     }
 }
 
@@ -431,11 +431,11 @@ where
     type Output = P::Output;
 
     fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
-        let (_, rest, failure0) = self.1.parse(input)?;
-        let (output, rest, failure1) = self.0.parse(rest)?;
-        let (_, rest, failure2) = self.2.parse(rest)?;
+        let (_, rest, residual0) = self.1.parse(input)?;
+        let (output, rest, residual1) = self.0.parse(rest)?;
+        let (_, rest, residual2) = self.2.parse(rest)?;
 
-        Ok((output, rest, failure0.merge(failure1).merge(failure2)))
+        Ok((output, rest, residual0.merge(residual1).merge(residual2)))
     }
 }
 
@@ -451,9 +451,9 @@ where
     type Output = O;
 
     fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
-        let (output, rest, failure) = self.0.parse(input)?;
+        let (output, rest, residual) = self.0.parse(input)?;
 
-        Ok((self.1(output), rest, failure))
+        Ok((self.1(output), rest, residual))
     }
 }
 
@@ -467,7 +467,7 @@ where
 
     fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
         match self.0.parse(input) {
-            Ok((output, rest, failure)) => Ok((Some(output), rest, failure)),
+            Ok((output, rest, residual)) => Ok((Some(output), rest, residual)),
             Err(Error::Recoverable(failure)) => Ok((None, input, Some(failure))),
             Err(error) => Err(error),
         }
@@ -484,10 +484,10 @@ where
     type Output = P::Output;
 
     fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
-        let (output, rest, failure) = self.0.parse(input)?;
+        let (output, rest, residual) = self.0.parse(input)?;
 
         if self.1(&output) {
-            Ok((output, rest, failure))
+            Ok((output, rest, residual))
         } else {
             Err(Failure::new(input, Expectation::Satisfy).recover())
         }
@@ -505,7 +505,7 @@ where
 
     fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
         match self.0.parse(input) {
-            Ok((_, rest, failure)) => Ok((self.1.clone(), rest, failure)),
+            Ok((_, rest, residual)) => Ok((self.1.clone(), rest, residual)),
             Err(error) => Err(error),
         }
     }
