@@ -271,7 +271,7 @@ pub struct Repeat<P>(P, usize);
 
 impl<P> Parser for Repeat<P>
 where
-    P: Parser
+    P: Parser,
 {
     type Output = Vec<P::Output>;
 
