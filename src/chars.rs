@@ -171,3 +171,27 @@ impl Parser for NoneOf<'_> {
 pub fn none_of<'a>(what: &'a str) -> NoneOf<'a> {
     NoneOf(what)
 }
+
+/// Matches any whitespace character
+///
+/// Fails with [`Expectation::Label`] if the next character is not
+/// whitespace, or if the input is empty.
+///
+/// # Example
+///
+/// ```
+/// use gparse::Parser;
+/// use gparse::chars::whitespace;
+///
+/// let (output, rest, _) = whitespace.parse("   ").unwrap();
+/// assert_eq!(output, ' ');
+/// assert_eq!(rest, "  ");
+///
+/// assert_eq!(whitespace.parse("alice").unwrap_err().to_string(), "Expected any whitespace character");
+/// ```
+pub fn whitespace<'a>(input: &'a str) -> crate::Result<'a, char> {
+    anything
+        .satisfy(|&ch| ch.is_whitespace())
+        .label("any whitespace character")
+        .parse(input)
+}

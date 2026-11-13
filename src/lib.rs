@@ -538,15 +538,15 @@ pub trait Parser: Sized {
     ///
     /// let a_or_b = char('a').or(char('b'));
     ///
-    /// assert_eq!(a_or_b.parse("apple").unwrap().0, 'a');
-    /// assert_eq!(a_or_b.parse("banana").unwrap().0, 'b');
+    /// assert_eq!(a_or_b.parse("alice").unwrap().0, 'a');
+    /// assert_eq!(a_or_b.parse("bob").unwrap().0, 'b');
     ///
-    /// let error = a_or_b.parse("coconut").unwrap_err();
+    /// let error = a_or_b.parse("charlie").unwrap_err();
     /// assert!(matches!(error, Error::Recoverable(_)));
     /// assert_eq!(error.to_string(), "Expected 'a' or 'b'");
     ///
     /// // A committed error from the first parser means the second is never tried.
-    /// let error = char('a').cut().or(char('b')).parse("banana").unwrap_err();
+    /// let error = char('a').cut().or(char('b')).parse("bob").unwrap_err();
     /// assert!(matches!(error, Error::Committed(_)));
     /// ```
     fn or<P>(self, other: P) -> Or<Self, P>
@@ -725,16 +725,16 @@ pub trait Parser: Sized {
     ///
     /// let maybe_a = char('a').optional();
     ///
-    /// let (output, rest, _) = maybe_a.parse("apple").unwrap();
+    /// let (output, rest, _) = maybe_a.parse("alice").unwrap();
     /// assert_eq!(output, Some('a'));
-    /// assert_eq!(rest, "pple");
+    /// assert_eq!(rest, "lice");
     ///
-    /// let (output, rest, _) = maybe_a.parse("banana").unwrap();
+    /// let (output, rest, _) = maybe_a.parse("bob").unwrap();
     /// assert_eq!(output, None);
-    /// assert_eq!(rest, "banana");
+    /// assert_eq!(rest, "bob");
     ///
     /// // Committed errors are not turned into `None`.
-    /// assert!(char('a').cut().optional().parse("banana").is_err());
+    /// assert!(char('a').cut().optional().parse("bob").is_err());
     /// ```
     fn optional(self) -> Optional<Self> {
         Optional(self)
