@@ -116,11 +116,7 @@ where
         let mut rest = input;
         let mut latent = None;
 
-        loop {
-            let Ok((output, next, residual)) = anything.parse(rest) else {
-                break;
-            };
-
+        while let Ok((output, next, residual)) = anything.parse(rest) {
             if !self.0(output) {
                 break;
             }
