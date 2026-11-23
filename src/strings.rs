@@ -5,6 +5,28 @@ use crate::{
     Merge, Parser,
 };
 
+/// Matches an entire string.
+///
+/// This parser can never fail, even for empty inputs.
+///
+/// # Example
+///
+/// ```
+/// use gparse::Parser;
+/// use gparse::strings::everything;
+///
+/// let (output, rest, _) = everything.parse("alice").unwrap();
+/// assert_eq!(output, "alice");
+/// assert_eq!(rest, "");
+///
+/// let (output, rest, _) = everything.parse("").unwrap();
+/// assert_eq!(output, "");
+/// assert_eq!(rest, "");
+/// ```
+pub fn everything<'a>(input: &'a str) -> crate::Result<'a, String> {
+    Ok((input.to_string(), "", None))
+}
+
 /// A parser that matches a fixed string.
 ///
 /// This `struct` is created by [`literal`]. See its documentation for more.
