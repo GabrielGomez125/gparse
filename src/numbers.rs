@@ -34,7 +34,7 @@ use crate::{
 /// assert_eq!(zero.parse("0").unwrap().0, 0);
 /// assert!(zero.parse("1").is_err());
 /// ```
-pub fn zero<'a>(input: &'a str) -> crate::Result<'a, u8> {
+pub fn zero(input: &str) -> crate::Result<'_, u8> {
     char('0').value(0).parse(input)
 }
 
@@ -49,7 +49,7 @@ pub fn zero<'a>(input: &'a str) -> crate::Result<'a, u8> {
 /// assert_eq!(nonzero_digit.parse("7").unwrap().0, 7);
 /// assert!(nonzero_digit.parse("0").is_err());
 /// ```
-pub fn nonzero_digit<'a>(input: &'a str) -> crate::Result<'a, u8> {
+pub fn nonzero_digit(input: &str) -> crate::Result<'_, u8> {
     one_of("123456789")
         .map(|ch| ch.to_digit(10).unwrap() as u8)
         .parse(input)
@@ -69,7 +69,7 @@ pub fn nonzero_digit<'a>(input: &'a str) -> crate::Result<'a, u8> {
 ///
 /// assert_eq!(digit.parse("x").unwrap_err().to_string(), "Expected '0' or one of 123456789");
 /// ```
-pub fn digit<'a>(input: &'a str) -> crate::Result<'a, u8> {
+pub fn digit(input: &str) -> crate::Result<'_, u8> {
     zero.or(nonzero_digit).parse(input)
 }
 
@@ -94,7 +94,7 @@ pub fn digit<'a>(input: &'a str) -> crate::Result<'a, u8> {
 /// // Zero is not positive.
 /// assert!(positive_integer.parse("0").is_err());
 /// ```
-pub fn positive_integer<'a>(input: &'a str) -> crate::Result<'a, u32> {
+pub fn positive_integer(input: &str) -> crate::Result<'_, u32> {
     nonzero_digit
         .then(digit.many())
         .map(|(first, rest)| {
@@ -132,7 +132,7 @@ pub fn positive_integer<'a>(input: &'a str) -> crate::Result<'a, u32> {
 /// assert_eq!(output, 0);
 /// assert_eq!(rest, "07");
 /// ```
-pub fn nonnegative_integer<'a>(input: &'a str) -> crate::Result<'a, u32> {
+pub fn nonnegative_integer(input: &str) -> crate::Result<'_, u32> {
     zero.map(u32::from).or(positive_integer).parse(input)
 }
 
@@ -157,7 +157,7 @@ pub fn nonnegative_integer<'a>(input: &'a str) -> crate::Result<'a, u32> {
 ///
 /// assert!(integer.parse("+5").is_err());
 /// ```
-pub fn integer<'a>(input: &'a str) -> crate::Result<'a, i32> {
+pub fn integer(input: &str) -> crate::Result<'_, i32> {
     char('-')
         .optional()
         .then(nonnegative_integer)
@@ -191,7 +191,7 @@ pub fn integer<'a>(input: &'a str) -> crate::Result<'a, i32> {
 /// assert_eq!(output, 3.0);
 /// assert_eq!(rest, ".x");
 /// ```
-pub fn number<'a>(input: &'a str) -> crate::Result<'a, f64> {
+pub fn number(input: &str) -> crate::Result<'_, f64> {
     char('-')
         .optional()
         .then(nonnegative_integer)
@@ -232,7 +232,7 @@ pub fn number<'a>(input: &'a str) -> crate::Result<'a, f64> {
 /// let (output, _, _) = number_scientific.parse("25e-1").unwrap();
 /// assert!((output - 2.5).abs() < 1e-12);
 /// ```
-pub fn number_scientific<'a>(input: &'a str) -> crate::Result<'a, f64> {
+pub fn number_scientific(input: &str) -> crate::Result<'_, f64> {
     number
         .then(
             one_of("Ee")

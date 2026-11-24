@@ -24,7 +24,7 @@ use crate::{
 /// assert_eq!(output, "");
 /// assert_eq!(rest, "");
 /// ```
-pub fn everything<'a>(input: &'a str) -> crate::Result<'a, String> {
+pub fn everything(input: &str) -> crate::Result<'_, String> {
     Ok((input.to_string(), "", None))
 }
 
@@ -69,7 +69,7 @@ impl Parser for Literal<'_> {
 /// // The error names the first character that doesn't match.
 /// assert_eq!(literal("let").parse("lex").unwrap_err().to_string(), "Expected 't'");
 /// ```
-pub fn literal<'a>(source: &'a str) -> Literal<'a> {
+pub fn literal(source: &str) -> Literal<'_> {
     Literal(source)
 }
 
@@ -305,6 +305,6 @@ where
 /// assert_eq!(output, "");
 /// assert_eq!(rest, "123");
 /// ```
-pub fn manyspace<'a>(input: &'a str) -> crate::Result<'a, String> {
+pub fn manyspace(input: &str) -> crate::Result<'_, String> {
     take_while(char::is_whitespace).parse(input)
 }
