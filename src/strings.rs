@@ -1,13 +1,14 @@
 //! Parsers whose outputs are strings.
 
 use crate::{
-    chars::{anything, char},
+    chars::{anything, char, none_of, one_of},
     Merge, Parser,
 };
 
-/// Matches an entire string.
+/// Matches all of the remaining input and outputs it as a `String`.
 ///
-/// This parser can never fail, even for empty inputs.
+/// `everything` never fails. On an empty input, the output is an empty
+/// `String`.
 ///
 /// # Example
 ///
@@ -72,9 +73,111 @@ pub fn literal<'a>(source: &'a str) -> Literal<'a> {
     Literal(source)
 }
 
+/// A parser that matches zero or more characters from a set.
+///
+/// This `struct` is created by [`everything_in`]. See its documentation for more.
+pub struct EverythingIn<'a>(&'a str);
+
+impl Parser for EverythingIn<'_> {
+    type Output = String;
+
+    fn parse<'a>(&self, input: &'a str) -> crate::Result<'a, Self::Output> {
+        let mut outputs = String::new();
+        let mut rest = input;
+        let mut latent = None;
+
+        while let Ok((output, next, residual)) = one_of(self.0).parse(rest) {
+            outputs.push(output);
+            rest = next;
+            latent = latent.merge(residual)
+        }
+
+        Ok((outputs, rest, latent))
+    }
+}
+
+/// Matches zero or more characters that appear in `what` and outputs them as a
+/// `String`.
+///
+/// This is the repeated form of [`one_of`], collected into a `String` instead
+/// of a `Vec`. Like [`take_while`], it never fails. If the first character is
+/// not in `what`, the output is an empty `String` and no input is consumed.
+///
+/// # Example
+///
+/// ```
+/// use gparse::Parser;
+/// use gparse::strings::everything_in;
+///
+/// let hex = everything_in("0123456789abcdef");
+///
+/// let (output, rest, _) = hex.parse("ff00cc;").unwrap();
+/// assert_eq!(output, "ff00cc");
+/// assert_eq!(rest, ";");
+///
+/// let (output, rest, _) = hex.parse("xyz").unwrap();
+/// assert_eq!(output, "");
+/// assert_eq!(rest, "xyz");
+/// ```
+pub fn everything_in(what: &str) -> EverythingIn<'_> {
+    EverythingIn(what)
+}
+
+/// A parser that matches zero or more characters not in a set.
+///
+/// This `struct` is created by [`everything_but`]. See its documentation for more.
+pub struct EverythingBut<'a>(&'a str);
+
+impl Parser for EverythingBut<'_> {
+    type Output = String;
+
+    fn parse<'a>(&self, input: &'a str) -> crate::Result<'a, Self::Output> {
+        let mut outputs = String::new();
+        let mut rest = input;
+        let mut latent = None;
+
+        while let Ok((output, next, residual)) = none_of(self.0).parse(rest) {
+            outputs.push(output);
+            rest = next;
+            latent = latent.merge(residual)
+        }
+
+        Ok((outputs, rest, latent))
+    }
+}
+
+/// Matches zero or more characters that do **not** appear in `what` and
+/// outputs them as a `String`.
+///
+/// This is the repeated form of [`none_of`], collected into a `String` instead
+/// of a `Vec`. It never fails. The parse stops just before the first character
+/// in `what`, or at the end of the input.
+///
+/// # Example
+///
+/// ```
+/// use gparse::Parser;
+/// use gparse::strings::everything_but;
+///
+/// // Read one comma-separated field.
+/// let field = everything_but(",\n");
+///
+/// let (output, rest, _) = field.parse("alice,30\n").unwrap();
+/// assert_eq!(output, "alice");
+/// assert_eq!(rest, ",30\n");
+///
+/// // An empty field is still a match.
+/// let (output, rest, _) = field.parse(",30\n").unwrap();
+/// assert_eq!(output, "");
+/// assert_eq!(rest, ",30\n");
+/// ```
+pub fn everything_but(what: &str) -> EverythingBut<'_> {
+    EverythingBut(what)
+}
+
 /// A parser that matches some number of characters.
 ///
-/// This `struct` is constructed by [`take`]. See its documentation for more.
+/// This `struct` is created by [`take`]. See its documentation for more.
 pub struct Take(usize);
 
 impl Parser for Take {
@@ -100,9 +203,11 @@ impl Parser for Take {
 
 /// Matches exactly `n` characters and outputs them as a `String`.
 ///
-/// This parser behaves similarly to [`repeat`](crate::Parser::repeat), but
-/// matches any character instead of some given parser, and collects its outputs
-/// into a `String` instead of a `Vec`.
+/// Behaves like [`repeat`](crate::Parser::repeat) on [`anything`], but
+/// collects the outputs into a `String` instead of a `Vec`.
+///
+/// Fails with [`Expectation::Label`](crate::Expectation::Label) if fewer than
+/// `n` characters are left.
 ///
 /// # Example
 ///
@@ -116,7 +221,7 @@ impl Parser for Take {
 /// assert_eq!(output, "what");
 /// assert_eq!(rest, "soever");
 ///
-/// assert_eq!(four_chars.parse("let").unwrap_err().to_string(), "Expected exactly 4 characters")
+/// assert_eq!(four_chars.parse("let").unwrap_err().to_string(), "Expected exactly 4 characters");
 /// ```
 pub fn take(n: usize) -> Take {
     Take(n)
@@ -124,7 +229,7 @@ pub fn take(n: usize) -> Take {
 
 /// A parser that matches zero or more characters satisfying some predicate.
 ///
-/// This `struct` is constructed by [`take_while`]. See its documentation for more.
+/// This `struct` is created by [`take_while`]. See its documentation for more.
 pub struct TakeWhile<F>(F);
 
 impl<F> Parser for TakeWhile<F>
@@ -152,7 +257,11 @@ where
     }
 }
 
-/// Matches zero or more characters satisfying some predicate.
+/// Matches zero or more characters that satisfy `predicate` and outputs them
+/// as a `String`.
+///
+/// `take_while` never fails. If the first character does not satisfy
+/// `predicate`, the output is an empty `String` and no input is consumed.
 ///
 /// # Example
 ///
@@ -177,9 +286,10 @@ where
     TakeWhile(predicate)
 }
 
-/// Matches zero or more whitespace characters.
+/// Matches zero or more whitespace characters and outputs them as a `String`.
 ///
-/// This parser is equivalent to [`take_while`] with predicate [`char::is_whitespace`]
+/// Same as `take_while(char::is_whitespace)`. Like [`take_while`], it never
+/// fails.
 ///
 /// # Example
 ///

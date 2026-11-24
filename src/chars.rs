@@ -7,13 +7,14 @@
 //!
 //! ```
 //! use gparse::Parser;
-//! use gparse::chars::{char, none_of, one_of};
+//! use gparse::chars::{char, one_of};
+//! use gparse::strings::everything_but;
 //!
 //! // A simple identifier: a letter or underscore, then any characters that
 //! // aren't whitespace or punctuation.
 //! let identifier = one_of("abcdefghijklmnopqrstuvwxyz_")
-//!     .then(none_of(" \t\n(),;").many())
-//!     .map(|(first, rest)| std::iter::once(first).chain(rest).collect::<String>());
+//!     .then(everything_but(" \t\n(),;"))
+//!     .map(|(first, rest)| format!("{first}{rest}"));
 //!
 //! let call = identifier.then_ignore(char('(')).then_ignore(char(')'));
 //!
@@ -116,6 +117,9 @@ impl Parser for OneOf<'_> {
 /// Fails with [`Expectation::OneOf`] if the next character is not in `what`,
 /// or if the input is empty.
 ///
+/// To match a run of these characters as a `String`, use
+/// [`everything_in`](crate::strings::everything_in).
+///
 /// # Example
 ///
 /// ```
@@ -128,7 +132,7 @@ impl Parser for OneOf<'_> {
 /// assert_eq!(sign.parse("-5").unwrap().0, '-');
 /// assert_eq!(sign.parse("5").unwrap_err().to_string(), "Expected one of +-");
 /// ```
-pub fn one_of<'a>(what: &'a str) -> OneOf<'a> {
+pub fn one_of(what: &str) -> OneOf<'_> {
     OneOf(what)
 }
 
@@ -153,26 +157,26 @@ impl Parser for NoneOf<'_> {
 /// Fails with [`Expectation::NoneOf`] if the next character is in `what`, or
 /// if the input is empty.
 ///
+/// To match a run of these characters as a `String`, use
+/// [`everything_but`](crate::strings::everything_but).
+///
 /// # Example
 ///
 /// ```
 /// use gparse::Parser;
 /// use gparse::chars::none_of;
 ///
-/// // Read one comma-separated field.
-/// let field = none_of(",\n").many();
-///
-/// let (output, rest, _) = field.parse("alice,30\n").unwrap();
-/// assert_eq!(output.into_iter().collect::<String>(), "alice");
-/// assert_eq!(rest, ",30\n");
+/// let (output, rest, _) = none_of(",\n").parse("alice,30\n").unwrap();
+/// assert_eq!(output, 'a');
+/// assert_eq!(rest, "lice,30\n");
 ///
 /// assert_eq!(none_of(",").parse(",").unwrap_err().to_string(), "Expected none of ,");
 /// ```
-pub fn none_of<'a>(what: &'a str) -> NoneOf<'a> {
+pub fn none_of(what: &str) -> NoneOf<'_> {
     NoneOf(what)
 }
 
-/// Matches any whitespace character
+/// Matches any one whitespace character.
 ///
 /// Fails with [`Expectation::Label`] if the next character is not
 /// whitespace, or if the input is empty.
