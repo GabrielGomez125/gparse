@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use gparse::{
     chars::char,
     numbers::number_scientific,
-    strings::{literal, manyspace, take_while},
+    strings::{everything_but, literal, manyspace},
     Parser,
 };
 
@@ -58,7 +58,7 @@ pub fn json_number(input: &str) -> gparse::Result<'_, JSONValue> {
 }
 
 pub fn json_string(input: &str) -> gparse::Result<'_, JSONValue> {
-    take_while(|c: char| c != '"')
+    everything_but("\"")
         .map(JSONValue::String)
         .padded(char('"'))
         .parse(input)
@@ -66,8 +66,8 @@ pub fn json_string(input: &str) -> gparse::Result<'_, JSONValue> {
 
 pub fn json_array(input: &str) -> gparse::Result<'_, JSONValue> {
     json_value
-        .then_ignore(manyspace)
-        .then(
+        .separated(
+            manyspace,
             json_value
                 .delimited(char(',').then(manyspace), manyspace)
                 .many(),
@@ -89,15 +89,14 @@ pub fn json_array(input: &str) -> gparse::Result<'_, JSONValue> {
 pub fn json_member(input: &str) -> gparse::Result<'_, (String, JSONValue)> {
     json_string
         .map(|value| value.try_into().unwrap())
-        .then_ignore(char(':').padded(manyspace))
-        .then(json_value)
+        .separated(char(':').padded(manyspace), json_value)
         .parse(input)
 }
 
 pub fn json_object(input: &str) -> gparse::Result<'_, JSONValue> {
     json_member
-        .then_ignore(manyspace)
-        .then(
+        .separated(
+            manyspace,
             json_member
                 .delimited(char(',').then(manyspace), manyspace)
                 .many(),
