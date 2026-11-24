@@ -28,11 +28,11 @@ impl TryFrom<JSONValue> for String {
     }
 }
 
-pub fn json<'a>(input: &'a str) -> gparse::Result<'a, JSONValue> {
+pub fn json(input: &str) -> gparse::Result<'_, JSONValue> {
     json_value.padded(manyspace).parse(input)
 }
 
-pub fn json_value<'a>(input: &'a str) -> gparse::Result<'a, JSONValue> {
+pub fn json_value(input: &str) -> gparse::Result<'_, JSONValue> {
     json_null
         .or(json_boolean)
         .or(json_number)
@@ -42,29 +42,29 @@ pub fn json_value<'a>(input: &'a str) -> gparse::Result<'a, JSONValue> {
         .parse(input)
 }
 
-pub fn json_null<'a>(input: &'a str) -> gparse::Result<'a, JSONValue> {
+pub fn json_null(input: &str) -> gparse::Result<'_, JSONValue> {
     literal("null").value(JSONValue::Null).parse(input)
 }
 
-pub fn json_boolean<'a>(input: &'a str) -> gparse::Result<'a, JSONValue> {
+pub fn json_boolean(input: &str) -> gparse::Result<'_, JSONValue> {
     literal("true")
         .value(JSONValue::Boolean(true))
         .or(literal("false").value(JSONValue::Boolean(false)))
         .parse(input)
 }
 
-pub fn json_number<'a>(input: &'a str) -> gparse::Result<'a, JSONValue> {
+pub fn json_number(input: &str) -> gparse::Result<'_, JSONValue> {
     number_scientific.map(JSONValue::Number).parse(input)
 }
 
-pub fn json_string<'a>(input: &'a str) -> gparse::Result<'a, JSONValue> {
+pub fn json_string(input: &str) -> gparse::Result<'_, JSONValue> {
     take_while(|c: char| c != '"')
         .map(JSONValue::String)
         .padded(char('"'))
         .parse(input)
 }
 
-pub fn json_array<'a>(input: &'a str) -> gparse::Result<'a, JSONValue> {
+pub fn json_array(input: &str) -> gparse::Result<'_, JSONValue> {
     json_value
         .then_ignore(manyspace)
         .then(
@@ -86,7 +86,7 @@ pub fn json_array<'a>(input: &'a str) -> gparse::Result<'a, JSONValue> {
         .parse(input)
 }
 
-pub fn json_member<'a>(input: &'a str) -> gparse::Result<'a, (String, JSONValue)> {
+pub fn json_member(input: &str) -> gparse::Result<'_, (String, JSONValue)> {
     json_string
         .map(|value| value.try_into().unwrap())
         .then_ignore(char(':').padded(manyspace))
@@ -94,7 +94,7 @@ pub fn json_member<'a>(input: &'a str) -> gparse::Result<'a, (String, JSONValue)
         .parse(input)
 }
 
-pub fn json_object<'a>(input: &'a str) -> gparse::Result<'a, JSONValue> {
+pub fn json_object(input: &str) -> gparse::Result<'_, JSONValue> {
     json_member
         .then_ignore(manyspace)
         .then(

@@ -49,7 +49,7 @@ use crate::{Expectation, Failure, Parser};
 ///
 /// assert_eq!(anything.parse("").unwrap_err().to_string(), "Expected anything");
 /// ```
-pub fn anything<'a>(input: &'a str) -> crate::Result<'a, char> {
+pub fn anything(input: &str) -> crate::Result<'_, char> {
     let ch = input
         .chars()
         .next()
@@ -193,7 +193,7 @@ pub fn none_of(what: &str) -> NoneOf<'_> {
 ///
 /// assert_eq!(whitespace.parse("alice").unwrap_err().to_string(), "Expected any whitespace character");
 /// ```
-pub fn whitespace<'a>(input: &'a str) -> crate::Result<'a, char> {
+pub fn whitespace(input: &str) -> crate::Result<'_, char> {
     anything
         .satisfy(|&ch| ch.is_whitespace())
         .label("any whitespace character")
