@@ -15,8 +15,7 @@
 //!
 //! // A parser for points such as "(3,-4)".
 //! let point = integer
-//!     .then_ignore(char(','))
-//!     .then(integer)
+//!     .separated(char(','), integer)
 //!     .delimited(char('('), char(')'));
 //!
 //! // On success, a parser returns its output and the input it did not consume.
@@ -107,7 +106,8 @@ pub mod strings;
 pub enum Expectation {
     /// Any character. Produced when the input ends too soon.
     Anything,
-    /// A value that satisfies a predicate. Produced by [`Parser::satisfy`].
+    /// A value that satisfies a predicate. Produced by [`Parser::satisfy`] and
+    /// [`Parser::try_map`].
     Satisfy,
     /// A specific character. Produced by [`chars::char()`].
     Char(char),
@@ -745,7 +745,7 @@ pub trait Parser: Sized {
     /// Changes this parser's output with the function `op`.
     ///
     /// `op` is only called when the parse succeeds. Errors are passed through
-    /// unchanged.
+    /// unchanged. Use [`try_map`](Parser::try_map) if the conversion can fail.
     ///
     /// # Example
     ///
@@ -772,6 +772,39 @@ pub trait Parser: Sized {
         F: Fn(Self::Output) -> O,
     {
         Map(self, op)
+    }
+
+    /// Changes this parser's output with the function `op`, which may fail.
+    ///
+    /// If `op` returns `Ok(value)`, the output is `value`. If it returns
+    /// `Err(_)`, the parse fails recoverably with [`Expectation::Satisfy`],
+    /// pointing to the start of this parser's input. The error value from `op`
+    /// is discarded, so `op` can return any error type. Use
+    /// [`label`](Parser::label) to give the error a more helpful message.
+    ///
+    /// Errors from this parser itself are passed through unchanged, and `op`
+    /// is not called.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gparse::Parser;
+    /// use gparse::numbers::nonnegative_integer;
+    ///
+    /// let byte = nonnegative_integer.try_map(u8::try_from).label("a byte");
+    ///
+    /// let (output, rest, _) = byte.parse("255 rest").unwrap();
+    /// assert_eq!(output, 255);
+    /// assert_eq!(rest, " rest");
+    ///
+    /// // The conversion fails, so the parse does too.
+    /// assert_eq!(byte.parse("256").unwrap_err().to_string(), "Expected a byte");
+    /// ```
+    fn try_map<F, O, E>(self, op: F) -> TryMap<Self, F>
+    where
+        F: Fn(Self::Output) -> result::Result<O, E>,
+    {
+        TryMap(self, op)
     }
 
     /// Makes this parser optional.
@@ -1173,6 +1206,29 @@ where
         let (output, rest, residual) = self.0.parse(input)?;
 
         Ok((self.1(output), rest, residual))
+    }
+}
+
+/// A parser that changes another parser's output with a function that may fail.
+///
+/// This `struct` is created by [`Parser::try_map`]. See its documentation for
+/// more.
+pub struct TryMap<P, F>(P, F);
+
+impl<P, F, O, E> Parser for TryMap<P, F>
+where
+    P: Parser,
+    F: Fn(P::Output) -> result::Result<O, E>,
+{
+    type Output = O;
+
+    fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
+        let (output, rest, residual) = self.0.parse(input)?;
+
+        match self.1(output) {
+            Ok(result) => Ok((result, rest, residual)),
+            Err(_) => Err(Failure::new(input, Expectation::Satisfy).recover()),
+        }
     }
 }
 
