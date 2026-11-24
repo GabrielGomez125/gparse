@@ -79,7 +79,7 @@
 //! # Modules
 //!
 //! - [`chars`]: parsers for single characters.
-//! - [`strings`]: parsers for fixed strings.
+//! - [`strings`]: parsers whose outputs are strings.
 //! - [`numbers`]: parsers for digits, integers, and floating-point numbers.
 
 use std::{cmp::Ordering, error, fmt, result};
@@ -691,13 +691,11 @@ pub trait Parser: Sized {
     ///
     /// ```
     /// use gparse::Parser;
-    /// use gparse::chars::{char, none_of};
+    /// use gparse::chars::char;
+    /// use gparse::strings::everything_but;
     ///
     /// // A double-quoted string with no escape sequences.
-    /// let quoted = none_of("\"")
-    ///     .many()
-    ///     .map(|chars| chars.into_iter().collect::<String>())
-    ///     .padded(char('"'));
+    /// let quoted = everything_but("\"").padded(char('"'));
     ///
     /// let (output, rest, _) = quoted.parse("\"hello world\" rest").unwrap();
     /// assert_eq!(output, "hello world");
@@ -1078,8 +1076,8 @@ where
     }
 }
 
-/// A parser that runs between one other parser repeated twice,
-/// keeping only its own output.
+/// A parser that runs between two copies of another parser and keeps only its
+/// own output.
 ///
 /// This `struct` is created by [`Parser::padded`]. See its documentation for more.
 pub struct Padded<A, B>(A, B);
