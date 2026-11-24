@@ -29,7 +29,7 @@ impl TryFrom<JSONValue> for String {
 }
 
 pub fn json<'a>(input: &'a str) -> gparse::Result<'a, JSONValue> {
-    json_value.delimited(manyspace, manyspace).parse(input)
+    json_value.padded(manyspace).parse(input)
 }
 
 pub fn json_value<'a>(input: &'a str) -> gparse::Result<'a, JSONValue> {
@@ -60,7 +60,7 @@ pub fn json_number<'a>(input: &'a str) -> gparse::Result<'a, JSONValue> {
 pub fn json_string<'a>(input: &'a str) -> gparse::Result<'a, JSONValue> {
     take_while(|c: char| c != '"')
         .map(JSONValue::String)
-        .delimited(char('"'), char('"'))
+        .padded(char('"'))
         .parse(input)
 }
 
@@ -73,10 +73,7 @@ pub fn json_array<'a>(input: &'a str) -> gparse::Result<'a, JSONValue> {
                 .many(),
         )
         .optional()
-        .delimited(
-            manyspace.then(char('[')).then(manyspace),
-            char(']').then(manyspace),
-        )
+        .delimited((char('[')).padded(manyspace), char(']').then(manyspace))
         .map(|values| match values {
             Some((first, mut rest)) => {
                 let mut values = vec![first];
@@ -92,7 +89,7 @@ pub fn json_array<'a>(input: &'a str) -> gparse::Result<'a, JSONValue> {
 pub fn json_member<'a>(input: &'a str) -> gparse::Result<'a, (String, JSONValue)> {
     json_string
         .map(|value| value.try_into().unwrap())
-        .then_ignore(char(':').delimited(manyspace, manyspace))
+        .then_ignore(char(':').padded(manyspace))
         .then(json_value)
         .parse(input)
 }
@@ -106,10 +103,7 @@ pub fn json_object<'a>(input: &'a str) -> gparse::Result<'a, JSONValue> {
                 .many(),
         )
         .optional()
-        .delimited(
-            char('{').delimited(manyspace, manyspace),
-            char('}').then(manyspace),
-        )
+        .delimited(char('{').padded(manyspace), char('}').then(manyspace))
         .map(|members| match members {
             Some(((key, value), members)) => {
                 let mut object = HashMap::new();
