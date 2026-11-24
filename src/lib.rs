@@ -959,10 +959,19 @@ where
         let mut rest = input;
         let mut latent = None;
 
-        while let Ok((output, next, residual)) = self.0.parse(rest) {
-            outputs.push(output);
-            rest = next;
-            latent = latent.merge(residual);
+        loop {
+            match self.0.parse(rest) {
+                Ok((output, next, residual)) => {
+                    outputs.push(output);
+                    rest = next;
+                    latent = latent.merge(residual);
+                }
+                Err(Error::Recoverable(failure)) => {
+                    latent = latent.merge(Some(failure));
+                    break;
+                }
+                Err(error) => return Err(error),
+            }
         }
 
         Ok((outputs, rest, latent))
@@ -987,10 +996,19 @@ where
         let mut rest = next;
         let mut latent = residual;
 
-        while let Ok((output, next, residual)) = self.0.parse(rest) {
-            outputs.push(output);
-            rest = next;
-            latent = latent.merge(residual);
+        loop {
+            match self.0.parse(rest) {
+                Ok((output, next, residual)) => {
+                    outputs.push(output);
+                    rest = next;
+                    latent = latent.merge(residual);
+                }
+                Err(Error::Recoverable(failure)) => {
+                    latent = latent.merge(Some(failure));
+                    break;
+                }
+                Err(error) => return Err(error),
+            }
         }
 
         Ok((outputs, rest, latent))

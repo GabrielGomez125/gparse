@@ -58,22 +58,30 @@ pub fn json_number(input: &str) -> gparse::Result<'_, JSONValue> {
 }
 
 pub fn json_string(input: &str) -> gparse::Result<'_, JSONValue> {
-    everything_but("\"")
+    // Once a string is opened, it must be closed.
+    char('"')
+        .ignore_then(everything_but("\""))
+        .then_ignore(char('"').cut())
         .map(JSONValue::String)
-        .padded(char('"'))
         .parse(input)
 }
 
 pub fn json_array(input: &str) -> gparse::Result<'_, JSONValue> {
-    json_value
-        .separated(
-            manyspace,
-            json_value
-                .delimited(char(',').then(manyspace), manyspace)
-                .many(),
-        )
+    // A ',' must be followed by another value.
+    let next = json_value
+        .cut()
+        .delimited(char(',').then(manyspace), manyspace);
+
+    let body = json_value
+        .separated(manyspace, next.many())
         .optional()
-        .delimited((char('[')).padded(manyspace), char(']').then(manyspace))
+        .then_ignore(char(']'));
+
+    // Once a '[' is read, this must be an array.
+    char('[')
+        .padded(manyspace)
+        .ignore_then(body.cut())
+        .then_ignore(manyspace)
         .map(|values| match values {
             Some((first, mut rest)) => {
                 let mut values = vec![first];
@@ -89,21 +97,27 @@ pub fn json_array(input: &str) -> gparse::Result<'_, JSONValue> {
 pub fn json_member(input: &str) -> gparse::Result<'_, (String, JSONValue)> {
     json_string
         .try_map(String::try_from)
-        .label("a valid String")
-        .separated(char(':').padded(manyspace), json_value)
+        // A key must be followed by a ':' and a value.
+        .separated(char(':').padded(manyspace).cut(), json_value.cut())
         .parse(input)
 }
 
 pub fn json_object(input: &str) -> gparse::Result<'_, JSONValue> {
-    json_member
-        .separated(
-            manyspace,
-            json_member
-                .delimited(char(',').then(manyspace), manyspace)
-                .many(),
-        )
+    // A ',' must be followed by another member.
+    let next = json_member
+        .cut()
+        .delimited(char(',').then(manyspace), manyspace);
+
+    let body = json_member
+        .separated(manyspace, next.many())
         .optional()
-        .delimited(char('{').padded(manyspace), char('}').then(manyspace))
+        .then_ignore(char('}'));
+
+    // Once a '{' is read, this must be an object.
+    char('{')
+        .padded(manyspace)
+        .ignore_then(body.cut())
+        .then_ignore(manyspace)
         .map(|members| match members {
             Some(((key, value), members)) => {
                 let mut object = HashMap::new();
