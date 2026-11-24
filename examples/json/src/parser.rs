@@ -88,7 +88,8 @@ pub fn json_array(input: &str) -> gparse::Result<'_, JSONValue> {
 
 pub fn json_member(input: &str) -> gparse::Result<'_, (String, JSONValue)> {
     json_string
-        .map(|value| value.try_into().unwrap())
+        .try_map(String::try_from)
+        .label("a valid String")
         .separated(char(':').padded(manyspace), json_value)
         .parse(input)
 }
