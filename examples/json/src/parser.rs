@@ -73,10 +73,7 @@ pub fn json_array<'a>(input: &'a str) -> gparse::Result<'a, JSONValue> {
                 .many(),
         )
         .optional()
-        .delimited(
-            (char('[')).padded(manyspace),
-            char(']').then(manyspace),
-        )
+        .delimited((char('[')).padded(manyspace), char(']').then(manyspace))
         .map(|values| match values {
             Some((first, mut rest)) => {
                 let mut values = vec![first];
@@ -106,10 +103,7 @@ pub fn json_object<'a>(input: &'a str) -> gparse::Result<'a, JSONValue> {
                 .many(),
         )
         .optional()
-        .delimited(
-            char('{').padded(manyspace),
-            char('}').then(manyspace),
-        )
+        .delimited(char('{').padded(manyspace), char('}').then(manyspace))
         .map(|members| match members {
             Some(((key, value), members)) => {
                 let mut object = HashMap::new();
