@@ -644,11 +644,43 @@ pub trait Parser: Sized {
         IgnoreThen(self, next)
     }
 
+    /// Runs this parser, then `separator`, then `next`, and keeps the outputs
+    /// of this parser and `next` as a tuple.
+    ///
+    /// The output of `separator` is thrown away. All three parsers must
+    /// succeed. Same as `self.then_ignore(separator).then(next)`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gparse::Parser;
+    /// use gparse::chars::char;
+    /// use gparse::numbers::integer;
+    /// use gparse::strings::manyspace;
+    ///
+    /// // Two integers separated by a comma and optional whitespace.
+    /// let pair = integer.separated(char(',').then(manyspace), integer);
+    ///
+    /// let (output, rest, _) = pair.parse("2, -3 and more").unwrap();
+    /// assert_eq!(output, (2, -3));
+    /// assert_eq!(rest, " and more");
+    ///
+    /// // The separator is still required.
+    /// assert_eq!(pair.parse("2 3").unwrap_err().to_string(), "Expected ','");
+    /// ```
+    fn separated<P, R>(self, separator: P, next: R) -> Separated<Self, P, R>
+    where
+        P: Parser,
+        R: Parser,
+    {
+        Separated(self, separator, next)
+    }
+
     /// Runs `left`, then this parser, then `right`, and keeps only this
     /// parser's output.
     ///
     /// Useful for values wrapped in brackets, parentheses, and so on. All three
-    /// parsers must succeed.
+    /// parsers must succeed. Same as `left.ignore_then(self).then_ignore(right)`.
     ///
     /// # Example
     ///
@@ -660,10 +692,7 @@ pub trait Parser: Sized {
     ///
     /// // An ordered pair of integer coordinates.
     /// let point = integer
-    ///     .then_ignore(
-    ///         char(',').then(manyspace)
-    ///     )
-    ///     .then(integer)
+    ///     .separated(char(',').then(manyspace), integer)
     ///     .delimited(char('('), char(')'));
     ///
     /// let (output, rest, _) = point.parse("(2, 3) point").unwrap();
@@ -1050,6 +1079,34 @@ where
         let (output, rest, residual1) = self.1.parse(rest)?;
 
         Ok((output, rest, residual0.merge(residual1)))
+    }
+}
+
+/// A parser that runs two parsers with a separator between them and keeps
+/// both outputs.
+///
+/// This `struct` is created by [`Parser::separated`]. See its documentation
+/// for more.
+pub struct Separated<L, P, R>(L, P, R);
+
+impl<L, P, R> Parser for Separated<L, P, R>
+where
+    L: Parser,
+    P: Parser,
+    R: Parser,
+{
+    type Output = (L::Output, R::Output);
+
+    fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
+        let (output0, rest, residual0) = self.0.parse(input)?;
+        let (_, rest, residual1) = self.1.parse(rest)?;
+        let (output1, rest, residual2) = self.2.parse(rest)?;
+
+        Ok((
+            (output0, output1),
+            rest,
+            residual0.merge(residual1).merge(residual2),
+        ))
     }
 }
 
