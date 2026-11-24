@@ -647,8 +647,45 @@ pub trait Parser: Sized {
     /// Runs `left`, then this parser, then `right`, and keeps only this
     /// parser's output.
     ///
-    /// Useful for values wrapped in brackets, quotes, and so on. All three
+    /// Useful for values wrapped in brackets, parentheses, and so on. All three
     /// parsers must succeed.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use gparse::Parser;
+    /// use gparse::chars::char;
+    /// use gparse::numbers::integer;
+    /// use gparse::strings::manyspace;
+    ///
+    /// // An ordered pair of integer coordinates.
+    /// let point = integer
+    ///     .then_ignore(
+    ///         char(',').then(manyspace)
+    ///     )
+    ///     .then(integer)
+    ///     .delimited(char('('), char(')'));
+    ///
+    /// let (output, rest, _) = point.parse("(2, 3) point").unwrap();
+    /// assert_eq!(output, (2, 3));
+    /// assert_eq!(rest, " point");
+    ///
+    /// // A missing closing parenthesis is an error.
+    /// assert_eq!(point.parse("(2, 3").unwrap_err().to_string(), "Expected ')'");
+    /// ```
+    fn delimited<L, R>(self, left: L, right: R) -> Delimited<Self, L, R>
+    where
+        L: Parser,
+        R: Parser,
+    {
+        Delimited(self, left, right)
+    }
+
+    /// Runs `padding`, then this parser, then `padding` again, and keeps only
+    /// this parser's output.
+    ///
+    /// Behaves the same as [`delimited`](Parser::delimited) when `left` and `right`
+    /// are copies of the same parser.
     ///
     /// # Example
     ///
@@ -660,21 +697,20 @@ pub trait Parser: Sized {
     /// let quoted = none_of("\"")
     ///     .many()
     ///     .map(|chars| chars.into_iter().collect::<String>())
-    ///     .delimited(char('"'), char('"'));
+    ///     .padded(char('"'));
     ///
     /// let (output, rest, _) = quoted.parse("\"hello world\" rest").unwrap();
     /// assert_eq!(output, "hello world");
     /// assert_eq!(rest, " rest");
     ///
-    /// // A missing closing quote is an error.
+    /// // A missing quote is an error.
     /// assert_eq!(quoted.parse("\"unterminated").unwrap_err().to_string(), "Expected '\"'");
     /// ```
-    fn delimited<L, R>(self, left: L, right: R) -> Delimited<Self, L, R>
+    fn padded<P>(self, padding: P) -> Padded<Self, P>
     where
-        L: Parser,
-        R: Parser,
+        P: Parser,
     {
-        Delimited(self, left, right)
+        Padded(self, padding)
     }
 
     //---------- Other combinators ----------
@@ -1037,6 +1073,24 @@ where
         let (_, rest, residual0) = self.1.parse(input)?;
         let (output, rest, residual1) = self.0.parse(rest)?;
         let (_, rest, residual2) = self.2.parse(rest)?;
+
+        Ok((output, rest, residual0.merge(residual1).merge(residual2)))
+    }
+}
+
+pub struct Padded<A, B>(A, B);
+
+impl<A, B> Parser for Padded<A, B>
+where
+    A: Parser,
+    B: Parser,
+{
+    type Output = A::Output;
+
+    fn parse<'a>(&self, input: &'a str) -> Result<'a, Self::Output> {
+        let (_, rest, residual0) = self.1.parse(input)?;
+        let (output, rest, residual1) = self.0.parse(rest)?;
+        let (_, rest, residual2) = self.1.parse(rest)?;
 
         Ok((output, rest, residual0.merge(residual1).merge(residual2)))
     }
