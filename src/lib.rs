@@ -1078,9 +1078,9 @@ where
     }
 }
 
-/// A parser that runs between one other parser repeated twice, 
+/// A parser that runs between one other parser repeated twice,
 /// keeping only its own output.
-/// 
+///
 /// This `struct` is created by [`Parser::padded`]. See its documentation for more.
 pub struct Padded<A, B>(A, B);
 
